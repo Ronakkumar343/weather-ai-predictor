@@ -1,0 +1,8 @@
+{
+  "train_rows": 3280,
+  "test_rows": 731,
+  "tmax_mae_c": 1.02,
+  "rain_accuracy": 0.93,
+  "rain_base_rate_test": 0.089,
+  "split_date": "2024-01-01"
+}
