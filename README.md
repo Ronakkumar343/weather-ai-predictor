@@ -16,22 +16,23 @@ Global weather apps barely know Tharparkar exists. Mithi's climate is extreme an
 
 - Source: **Open-Meteo archive (ERA5 reanalysis)**, grid point nearest Mithi (24.78° N, 69.82° E)
 - **4,018 days** of daily max/min/mean temperature, rainfall, and wind — bundled in `data/` (two CSVs: 2015–2020 and 2021–2025), refreshable anytime with `train_model.py`
+- Since October 2026 the dataset also carries **daily mean relative humidity and surface pressure**, aggregated from the Open-Meteo **hourly** archive (96,432 hourly values, averaged 24-per-day) and stored as two extra columns in the same CSVs
 - Hottest day in the record: **48.1 °C on 27 May 2024**. Average year: only ~339 mm of rain.
 
 ## The model
 
-Two Random Forest models (scikit-learn, 300 trees each). Features use **only what is known before the target day** — yesterday's and last week's weather, rolling 7-day averages, and the season (day-of-year as sin/cos). No future leakage.
+Two Random Forest models (scikit-learn, 300 trees each). Features use **only what is known before the target day** — yesterday's and last week's weather, rolling 7-day averages, the season (day-of-year as sin/cos), and since October 2026 also humidity and pressure (yesterday's daily means, 7-day rolling means, and the 3-day pressure tendency). No future leakage.
 
 ### Honest test results
 
-Trained on 2015–2023, tested on **731 days of 2024–2025 the model had never seen**:
+Trained on 2015–2023, tested on **731 days of 2024–2025 the model had never seen** — the same split before and after the humidity/pressure features were added, so the numbers are directly comparable:
 
-| Prediction | Result |
-|---|---|
-| Tomorrow's max temperature | **Mean error 1.02 °C** |
-| Rain tomorrow (≥ 1 mm) | **93.0% accuracy** |
+| Prediction | Before (12 features) | Now (17 features) |
+|---|---|---|
+| Tomorrow's max temperature | Mean error 1.02 °C | **Mean error 1.01 °C** |
+| Rain tomorrow (≥ 1 mm) | 93.0% accuracy | **93.3% accuracy** |
 
-Read the rain number honestly: rain falls on only 8.9% of days in Mithi, so even "always say no rain" scores 91.1%. The model beats that baseline — and in the app it reports a rain *probability*, which is more useful than a yes/no in a desert.
+The new features helped, but honestly only a little — about a hundredth of a degree on temperature, and on rain two extra correctly-called days out of 731 (682 vs 680). That small gain is reported as measured, not dressed up. Read the rain number honestly too: rain falls on only 8.9% of days in Mithi, so even "always say no rain" scores 91.1%. The model beats that baseline — and in the app it reports a rain *probability*, which is more useful than a yes/no in a desert.
 
 ## Run it
 
@@ -46,7 +47,7 @@ streamlit run app.py
 
 ## Roadmap
 
-- [ ] Add humidity and pressure features from the hourly archive
+- [x] Add humidity and pressure features from the hourly archive (Oct 2026 — small real gains, see table above)
 - [ ] Compare Random Forest against gradient boosting and a simple LSTM
 - [ ] Weekly forecast view, not just tomorrow
 - [ ] Sindhi/Urdu language toggle for local users

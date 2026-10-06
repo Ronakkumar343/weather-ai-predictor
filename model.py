@@ -5,11 +5,14 @@ Predicts, for Mithi (Tharparkar, Sindh, Pakistan):
   2. Whether it will rain tomorrow   (classification, rain = >= 1.0 mm)
 
 Data: Open-Meteo historical archive (ERA5 reanalysis), daily values
-2015-2025 for the grid point nearest Mithi (24.78 N, 69.82 E).
+2015-2025 for the grid point nearest Mithi (24.78 N, 69.82 E), plus
+daily mean relative humidity and surface pressure aggregated from the
+hourly archive (24 hourly values per day).
 
 Features use only information available *before* the target day:
-yesterday's values, last-week values, rolling 7-day means, and the
-season (day-of-year encoded as sin/cos). No leakage from the future.
+yesterday's values, last-week values, rolling 7-day means, the 3-day
+pressure tendency, and the season (day-of-year encoded as sin/cos).
+No leakage from the future.
 """
 import numpy as np
 import pandas as pd
@@ -19,8 +22,10 @@ from sklearn.metrics import accuracy_score, mean_absolute_error
 FEATURES = [
     "doy_sin", "doy_cos",
     "tmax_lag1", "tmin_lag1", "tmean_lag1", "precip_lag1", "wind_lag1",
+    "rh_lag1", "press_lag1",
     "tmax_lag7", "precip_lag7",
-    "tmax_roll7", "tmin_roll7", "precip_roll7",
+    "tmax_roll7", "tmin_roll7", "precip_roll7", "rh_roll7", "press_roll7",
+    "press_trend",
 ]
 RAIN_MM = 1.0  # a day counts as "rain" at/above this many mm
 
@@ -56,6 +61,17 @@ def build_features(df):
     df["tmax_roll7"] = df["temperature_2m_max"].shift(1).rolling(7).mean()
     df["tmin_roll7"] = df["temperature_2m_min"].shift(1).rolling(7).mean()
     df["precip_roll7"] = df["precipitation_sum"].shift(1).rolling(7).sum()
+    # Humidity + pressure (daily means from the hourly archive), same
+    # lag/rolling pattern as the other variables — known before the
+    # target day, so still no future leakage.
+    df["rh_lag1"] = df["relative_humidity_2m_mean"].shift(1)
+    df["press_lag1"] = df["surface_pressure_mean"].shift(1)
+    df["rh_roll7"] = df["relative_humidity_2m_mean"].shift(1).rolling(7).mean()
+    df["press_roll7"] = df["surface_pressure_mean"].shift(1).rolling(7).mean()
+    # 3-day surface-pressure tendency ending yesterday: falling pressure
+    # is a classic early sign of unsettled weather.
+    df["press_trend"] = (df["surface_pressure_mean"].shift(1)
+                         - df["surface_pressure_mean"].shift(4))
     df["target_tmax"] = df["temperature_2m_max"]
     df["target_rain"] = (df["precipitation_sum"] >= RAIN_MM).astype(int)
     return df.dropna().reset_index(drop=True)

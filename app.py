@@ -47,13 +47,20 @@ def feature_row_for_tomorrow(recent: pd.DataFrame) -> pd.DataFrame:
         "temperature_2m_max": float("nan"), "temperature_2m_min": float("nan"),
         "temperature_2m_mean": float("nan"), "precipitation_sum": float("nan"),
         "wind_speed_10m_max": float("nan"),
+        "relative_humidity_2m_mean": float("nan"),
+        "surface_pressure_mean": float("nan"),
     }])], ignore_index=True)
     feat = model.build_features(ext)
     return feat.iloc[[-1]]
 
 
 def fetch_recent():
-    """Last 14 days of observed weather from the Open-Meteo forecast API."""
+    """Last 14 days of observed weather from the Open-Meteo forecast API.
+
+    The daily values come from the forecast API's daily endpoint; the
+    humidity and pressure columns are daily means aggregated from its
+    hourly endpoint, exactly as in the training data.
+    """
     r = requests.get("https://api.open-meteo.com/v1/forecast", params={
         "latitude": LAT, "longitude": LON, "past_days": 14, "forecast_days": 1,
         "daily": "temperature_2m_max,temperature_2m_min,temperature_2m_mean,"
@@ -63,7 +70,21 @@ def fetch_recent():
     r.raise_for_status()
     df = pd.DataFrame(r.json()["daily"]).rename(columns={"time": "date"})
     df["date"] = pd.to_datetime(df["date"])
-    return df.iloc[:14]  # observed days only, not the forecast day
+    df = df.iloc[:14]  # observed days only, not the forecast day
+
+    rh = requests.get("https://api.open-meteo.com/v1/forecast", params={
+        "latitude": LAT, "longitude": LON, "past_days": 14, "forecast_days": 1,
+        "hourly": "relative_humidity_2m,surface_pressure",
+        "timezone": "Asia/Karachi",
+    }, timeout=30)
+    rh.raise_for_status()
+    hourly = pd.DataFrame(rh.json()["hourly"])
+    hourly["date"] = pd.to_datetime(hourly["time"]).dt.normalize()
+    agg = hourly.groupby("date").agg(
+        relative_humidity_2m_mean=("relative_humidity_2m", "mean"),
+        surface_pressure_mean=("surface_pressure", "mean"),
+    ).reset_index()
+    return df.merge(agg, on="date", how="left")
 
 
 hist = load_history()
@@ -109,9 +130,10 @@ with tab3:
     st.subheader("The model")
     st.write(
         "Two Random Forest models (scikit-learn). Features: yesterday's and last "
-        "week's temperature, rain and wind, rolling 7-day averages, and the season "
-        "(day-of-year as sin/cos) — only information known *before* the target day, "
-        "so there is no cheating from the future."
+        "week's temperature, rain, wind, humidity and pressure, rolling 7-day "
+        "averages, the 3-day pressure tendency, and the season (day-of-year as "
+        "sin/cos) — only information known *before* the target day, so there is "
+        "no cheating from the future."
     )
     if METRICS.exists():
         met = json.loads(METRICS.read_text())

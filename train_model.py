@@ -3,6 +3,10 @@
 Data source: Open-Meteo archive API (free, no API key) — ERA5 reanalysis
 for the grid point nearest Mithi, Tharparkar (24.74 N, 69.81 E).
 
+Downloads the daily values plus the hourly archive; the hourly relative
+humidity and surface pressure are averaged into daily means and merged
+onto the daily table, so the bundled CSVs carry both.
+
 Usage:  python train_model.py
 Writes: data/mithi_weather_2015_2020.csv, data/mithi_weather_2021_2025.csv,
         metrics.json
@@ -25,18 +29,50 @@ PARAMS = {
              "precipitation_sum,wind_speed_10m_max",
     "timezone": "Asia/Karachi",
 }
+HOURLY_PARAMS = {
+    "latitude": LAT,
+    "longitude": LON,
+    "hourly": "relative_humidity_2m,surface_pressure",
+    "timezone": "Asia/Karachi",
+}
+# The hourly archive is fetched in two era chunks to keep responses sane.
+HOURLY_RANGES = [("2015-01-01", "2020-12-31"), ("2021-01-01", "2025-12-31")]
 
 
 def download():
     r = requests.get(ARCHIVE_URL, params=PARAMS, timeout=120)
     r.raise_for_status()
     daily = r.json()["daily"]
-    df = pd.DataFrame(daily).rename(columns={"time": "date"})
-    return df
+    return pd.DataFrame(daily).rename(columns={"time": "date"})
+
+
+def download_hourly_daily_means():
+    """Average the hourly archive into one humidity/pressure row per day."""
+    frames = []
+    for start, end in HOURLY_RANGES:
+        r = requests.get(ARCHIVE_URL, params={**HOURLY_PARAMS,
+                                               "start_date": start,
+                                               "end_date": end},
+                         timeout=300)
+        r.raise_for_status()
+        frames.append(pd.DataFrame(r.json()["hourly"]))
+    hourly = pd.concat(frames, ignore_index=True)
+    hourly["date"] = hourly["time"].str.slice(0, 10)
+    agg = hourly.groupby("date").agg(
+        relative_humidity_2m_mean=("relative_humidity_2m", "mean"),
+        surface_pressure_mean=("surface_pressure", "mean"),
+    ).reset_index()
+    agg["relative_humidity_2m_mean"] = agg["relative_humidity_2m_mean"].round(1)
+    agg["surface_pressure_mean"] = agg["surface_pressure_mean"].round(1)
+    return agg
 
 
 def main():
     df = download()
+    agg = download_hourly_daily_means()
+    df = df.merge(agg, on="date", how="left", validate="one_to_one")
+    if df[["relative_humidity_2m_mean", "surface_pressure_mean"]].isna().any().any():
+        raise SystemExit("Hourly archive did not cover every day — aborting.")
     df[df["date"] < "2021-01-01"].to_csv("data/mithi_weather_2015_2020.csv", index=False)
     df[df["date"] >= "2021-01-01"].to_csv("data/mithi_weather_2021_2025.csv", index=False)
     print(f"Downloaded {len(df)} days: {df['date'].min()} to {df['date'].max()}")
