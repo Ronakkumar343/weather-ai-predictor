@@ -1,0 +1,17 @@
+{
+  "split_date": "2024-01-01",
+  "train_rows": 3280,
+  "test_rows": 731,
+  "features": 17,
+  "tmax_mae_c": {
+    "persistence": 1.024,
+    "random_forest": 1.009,
+    "gradient_boosting": 1.014
+  },
+  "rain_accuracy": {
+    "persistence": 0.919,
+    "random_forest": 0.933,
+    "gradient_boosting": 0.923
+  },
+  "rain_base_rate_test": 0.089
+}
