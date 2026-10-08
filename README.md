@@ -34,6 +34,18 @@ Trained on 2015–2023, tested on **731 days of 2024–2025 the model had never 
 
 The new features helped, but honestly only a little — about a hundredth of a degree on temperature, and on rain two extra correctly-called days out of 731 (682 vs 680). That small gain is reported as measured, not dressed up. Read the rain number honestly too: rain falls on only 8.9% of days in Mithi, so even "always say no rain" scores 91.1%. The model beats that baseline — and in the app it reports a rain *probability*, which is more useful than a yes/no in a desert.
 
+### Model comparison (Oct 2026)
+
+Is Random Forest actually the right choice? `compare_models.py` races it against gradient boosting and a **persistence baseline** (predict tomorrow = yesterday, no learning at all) — same 17 features for both learned models, same split (train 2015–2023, test 731 days of 2024–2025), gradient boosting with scikit-learn defaults, nothing tuned on the test set. Full numbers in `model_comparison.json`:
+
+| Model | Tomorrow's max temp — mean error | Rain tomorrow — accuracy |
+|---|---|---|
+| Persistence (tomorrow = yesterday) | 1.024 °C | 91.9% |
+| Gradient Boosting | 1.014 °C | 92.3% |
+| **Random Forest (used in the app)** | **1.009 °C** | **93.3%** |
+
+Random Forest wins on both tasks, so it stays — but honestly by very little on temperature: Mithi's max temperature is so stable day-to-day that just repeating yesterday scores 1.024 °C, only 0.015 °C worse than the forest. The clearer win is on rain (93.3% vs 91.9% for persistence and 91.1% for always saying "no rain"). Temperature errors are shown to 3 decimals here because at 2 decimals all three models round to 1.01–1.02 °C and the real ordering disappears.
+
 ## Run it
 
 ```bash
@@ -44,11 +56,13 @@ streamlit run app.py
 - `app.py` — the Streamlit app (live prediction uses the Open-Meteo forecast API for the last 14 observed days; the climate tab works fully offline)
 - `model.py` — feature engineering + training (shared by the app and the trainer)
 - `train_model.py` — re-downloads the data, retrains, and rewrites `metrics.json`
+- `compare_models.py` — races Random Forest vs gradient boosting vs a persistence baseline on the same test split, and rewrites `model_comparison.json`
 
 ## Roadmap
 
 - [x] Add humidity and pressure features from the hourly archive (Oct 2026 — small real gains, see table above)
-- [ ] Compare Random Forest against gradient boosting and a simple LSTM
+- [x] Compare Random Forest against gradient boosting and a persistence baseline (Oct 2026 — Random Forest stays, by a small margin; see comparison table above)
+- [ ] Try a simple LSTM for comparison
 - [ ] Weekly forecast view, not just tomorrow
 - [ ] Sindhi/Urdu language toggle for local users
 
