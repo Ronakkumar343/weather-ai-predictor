@@ -39,19 +39,78 @@ def load_models():
 
 
 def feature_row_for_tomorrow(recent: pd.DataFrame) -> pd.DataFrame:
-    """Build one feature row predicting the day after `recent` ends."""
+    """Build one feature row predicting the day after `recent` ends.
+
+    The appended target-day row carries 0.0 placeholder raw values. Every
+    feature is a lag/rolling value taken from *earlier* days, so the
+    placeholders never enter the features — they only fill the target
+    columns, which prediction ignores. (Appending NaN instead would make
+    build_features' dropna() delete the target row entirely, and the
+    caller would silently get the last observed day's row.)
+    """
     recent = recent.sort_values("date").reset_index(drop=True)
     target_date = recent["date"].iloc[-1] + pd.Timedelta(days=1)
     ext = pd.concat([recent, pd.DataFrame([{
         "date": target_date,
-        "temperature_2m_max": float("nan"), "temperature_2m_min": float("nan"),
-        "temperature_2m_mean": float("nan"), "precipitation_sum": float("nan"),
-        "wind_speed_10m_max": float("nan"),
-        "relative_humidity_2m_mean": float("nan"),
-        "surface_pressure_mean": float("nan"),
+        "temperature_2m_max": 0.0, "temperature_2m_min": 0.0,
+        "temperature_2m_mean": 0.0, "precipitation_sum": 0.0,
+        "wind_speed_10m_max": 0.0,
+        "relative_humidity_2m_mean": 0.0,
+        "surface_pressure_mean": 0.0,
     }])], ignore_index=True)
     feat = model.build_features(ext)
     return feat.iloc[[-1]]
+
+
+def weekly_forecast(reg, clf, recent: pd.DataFrame, days: int = 7,
+                    rainy_day_mm: float = None) -> pd.DataFrame:
+    """Recursive 7-day outlook, built with the project's real pipeline.
+
+    Day +1 is predicted from the observed days, exactly like the
+    tomorrow forecast. For days +2..+7 the model's own predictions are
+    rolled forward as inputs: the predicted max temperature becomes
+    that day's temperature_2m_max, and every step re-runs
+    model.build_features, so the lag/rolling features are the project's
+    real ones — nothing is mocked. Columns the model does not predict
+    are filled with documented approximations:
+      * min temp  = predicted max − the recent average day/night range,
+      * mean temp = average of the predicted max and min,
+      * precipitation = rain probability × the average amount that
+        falls on a rainy day in the reference history (expected value),
+      * wind, humidity, pressure = last observed value (persistence).
+
+    Because later days are built on earlier predictions, errors
+    compound — only day +1 carries the verified accuracy. The result
+    columns are: date, tmax_pred, rain_prob.
+    """
+    recent = recent.sort_values("date").reset_index(drop=True)
+    if rainy_day_mm is None:
+        rainy = recent.loc[recent["precipitation_sum"] >= model.RAIN_MM,
+                           "precipitation_sum"]
+        rainy_day_mm = float(rainy.mean()) if len(rainy) else 5.0
+    diurnal = float((recent["temperature_2m_max"]
+                     - recent["temperature_2m_min"]).mean())
+    last = recent.iloc[-1]
+    work = recent.copy()
+    rows = []
+    for _ in range(days):
+        row = feature_row_for_tomorrow(work)
+        tmax = float(reg.predict(row[model.FEATURES])[0])
+        rain_p = float(clf.predict_proba(row[model.FEATURES])[0][1])
+        date = work["date"].iloc[-1] + pd.Timedelta(days=1)
+        rows.append({"date": date, "tmax_pred": tmax, "rain_prob": rain_p})
+        tmin = tmax - diurnal
+        work = pd.concat([work, pd.DataFrame([{
+            "date": date,
+            "temperature_2m_max": tmax,
+            "temperature_2m_min": tmin,
+            "temperature_2m_mean": (tmax + tmin) / 2,
+            "precipitation_sum": rain_p * rainy_day_mm,
+            "wind_speed_10m_max": float(last["wind_speed_10m_max"]),
+            "relative_humidity_2m_mean": float(last["relative_humidity_2m_mean"]),
+            "surface_pressure_mean": float(last["surface_pressure_mean"]),
+        }])], ignore_index=True)
+    return pd.DataFrame(rows)
 
 
 def fetch_recent():
@@ -103,6 +162,29 @@ with tab1:
         c1.metric(f"Predicted max temperature — {target}", f"{tmax:.1f} °C")
         c2.metric("Chance of rain (≥ 1 mm)", f"{rain_p:.0%}")
         st.write("Based on the last 14 days of observed weather in Mithi.")
+
+        rainy_hist = hist.loc[hist["precipitation_sum"] >= model.RAIN_MM,
+                              "precipitation_sum"]
+        rainy_day_mm = float(rainy_hist.mean()) if len(rainy_hist) else None
+        week = weekly_forecast(reg, clf, recent, rainy_day_mm=rainy_day_mm)
+        st.divider()
+        st.subheader("🗓️ Next 7 days — model outlook")
+        cols = st.columns(7)
+        for col, (_, r) in zip(cols, week.iterrows()):
+            with col:
+                st.markdown(f"**{r['date'].strftime('%a')}**  \n"
+                            f"{r['date'].strftime('%d %b')}")
+                st.markdown(f"### {r['tmax_pred']:.0f} °C")
+                st.caption(f"🌧️ rain {r['rain_prob']:.0%}")
+        st.line_chart(week.set_index("date")["tmax_pred"], height=180)
+        st.caption(
+            "Honest note: these 7 days are **model estimates**, made by feeding "
+            "each day's prediction back in as the next day's input (recursive "
+            "forecasting). Only tomorrow's prediction is verified — mean error "
+            "1.01 °C on 731 unseen days of 2024–2025. Days further out are built "
+            "on earlier predictions, so their accuracy is worse, and no accuracy "
+            "figure is claimed for them."
+        )
     except Exception as e:
         st.warning(f"Live data is unreachable right now ({e}). "
                    "The climate tab below works fully offline.")
@@ -134,6 +216,13 @@ with tab3:
         "averages, the 3-day pressure tendency, and the season (day-of-year as "
         "sin/cos) — only information known *before* the target day, so there is "
         "no cheating from the future."
+    )
+    st.write(
+        "The **7-day outlook** reuses these same two models recursively: each "
+        "day's prediction is fed back as the next day's input. That is why only "
+        "tomorrow's number carries the verified accuracy below — the further "
+        "out a day is, the more it rests on earlier predictions instead of "
+        "real observations."
     )
     if METRICS.exists():
         met = json.loads(METRICS.read_text())

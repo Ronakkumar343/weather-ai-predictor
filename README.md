@@ -10,6 +10,7 @@ Global weather apps barely know Tharparkar exists. Mithi's climate is extreme an
 
 - **Tomorrow's maximum temperature** — regression model
 - **Tomorrow's rain chance** (≥ 1 mm) — classification model
+- **7-day outlook** — the same models run recursively (each day's prediction feeds the next day); useful shape of the week ahead, but only tomorrow's number is verified — see the honesty note below
 - **Mithi climate explorer** — 11 years of local weather: monthly temperature and rainfall patterns, record days
 
 ## The data (real, local, 2015–2025)
@@ -46,6 +47,14 @@ Is Random Forest actually the right choice? `compare_models.py` races it against
 
 Random Forest wins on both tasks, so it stays — but honestly by very little on temperature: Mithi's max temperature is so stable day-to-day that just repeating yesterday scores 1.024 °C, only 0.015 °C worse than the forest. The clearer win is on rain (93.3% vs 91.9% for persistence and 91.1% for always saying "no rain"). Temperature errors are shown to 3 decimals here because at 2 decimals all three models round to 1.01–1.02 °C and the real ordering disappears.
 
+### The 7-day outlook (Oct 2026)
+
+The app also shows a week ahead. It is **not** a second model and it makes no new accuracy claim: the same two Random Forests are run **recursively** — predict tomorrow, write that prediction into the weather table as if observed, predict the day after from it, and so on for 7 days, re-running the exact same feature pipeline (`model.build_features`) at every step. Columns the model does not predict are filled with simple, stated approximations: min temperature from the recent average day/night range, precipitation as the rain probability times the average rainy-day amount in the record, and wind/humidity/pressure held at their last observed values.
+
+Read the week view honestly: **the verified numbers above (1.01 °C, 93.3%) apply to tomorrow only.** Each later day is built on earlier predictions, so errors compound and accuracy degrades day by day; no accuracy figure is claimed for days 2–7, in the app or here.
+
+One correctness fix shipped with this feature: the one-day helper previously appended an all-NaN row for the target day, which `build_features`' `dropna()` then deleted — so the "tomorrow" prediction was actually computed from the feature row of the last *observed* day. It now builds the target day's own row (placeholder raw values that never enter the lag features), and the headline prediction and day 1 of the outlook are the same number by construction.
+
 ## Run it
 
 ```bash
@@ -53,7 +62,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-- `app.py` — the Streamlit app (live prediction uses the Open-Meteo forecast API for the last 14 observed days; the climate tab works fully offline)
+- `app.py` — the Streamlit app (live prediction + recursive 7-day outlook use the Open-Meteo forecast API for the last 14 observed days; the climate tab works fully offline)
 - `model.py` — feature engineering + training (shared by the app and the trainer)
 - `train_model.py` — re-downloads the data, retrains, and rewrites `metrics.json`
 - `compare_models.py` — races Random Forest vs gradient boosting vs a persistence baseline on the same test split, and rewrites `model_comparison.json`
@@ -63,7 +72,7 @@ streamlit run app.py
 - [x] Add humidity and pressure features from the hourly archive (Oct 2026 — small real gains, see table above)
 - [x] Compare Random Forest against gradient boosting and a persistence baseline (Oct 2026 — Random Forest stays, by a small margin; see comparison table above)
 - [ ] Try a simple LSTM for comparison
-- [ ] Weekly forecast view, not just tomorrow
+- [x] Weekly forecast view, not just tomorrow (Oct 2026 — recursive multi-step outlook; the verified accuracy figures apply to tomorrow only, see "The 7-day outlook" above)
 - [ ] Sindhi/Urdu language toggle for local users
 
 ---
