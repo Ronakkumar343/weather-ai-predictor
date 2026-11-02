@@ -47,6 +47,32 @@ Is Random Forest actually the right choice? `compare_models.py` races it against
 
 Random Forest wins on both tasks, so it stays — but honestly by very little on temperature: Mithi's max temperature is so stable day-to-day that just repeating yesterday scores 1.024 °C, only 0.015 °C worse than the forest. The clearer win is on rain (93.3% vs 91.9% for persistence and 91.1% for always saying "no rain"). Temperature errors are shown to 3 decimals here because at 2 decimals all three models round to 1.01–1.02 °C and the real ordering disappears.
 
+### How sure is it? Prediction intervals (Nov 2026)
+
+A single number hides its own uncertainty, so the max-temperature model
+now also reports a range. Method: **split-conformal prediction**
+(`probabilistic.py`, full numbers in `probabilistic_metrics.json`). The
+same Random Forest and the same 2024-01-01 split as above; the 731-day
+test period is split chronologically in half — the first 365 days
+(2024-01-01 to 2024-12-30) calibrate the interval width from the
+model's absolute errors, and the second 366 days (2024-12-31 to
+2025-12-31) are the held-out validation slice. Calibration days are
+never scored as validation days.
+
+| Band | Half-width | Validation coverage (366 days) | Mean width |
+|---|---|---|---|
+| 80% band | ±1.69 °C | 85.8% | 3.38 °C |
+| 90% band | ±2.42 °C | 93.4% | 4.83 °C |
+
+Read honestly: both bands over-covered slightly on validation (85.8%
+vs the 80% target, 93.4% vs 90%) — the intervals are a touch wider
+than they need to be, which is the safe direction for a forecast.
+The point-forecast accuracy is unchanged by this step (still 1.01 °C
+mean error); intervals only describe its uncertainty. Limits: the
+validation slice is a single year (366 days), the intervals cover
+tomorrow only — no interval is claimed for days 2–7 of the outlook —
+and rain probabilities are not yet calibrated (that is the next step).
+
 ### The 7-day outlook (Oct 2026)
 
 The app also shows a week ahead. It is **not** a second model and it makes no new accuracy claim: the same two Random Forests are run **recursively** — predict tomorrow, write that prediction into the weather table as if observed, predict the day after from it, and so on for 7 days, re-running the exact same feature pipeline (`model.build_features`) at every step. Columns the model does not predict are filled with simple, stated approximations: min temperature from the recent average day/night range, precipitation as the rain probability times the average rainy-day amount in the record, and wind/humidity/pressure held at their last observed values.
@@ -66,6 +92,7 @@ streamlit run app.py
 - `model.py` — feature engineering + training (shared by the app and the trainer)
 - `train_model.py` — re-downloads the data, retrains, and rewrites `metrics.json`
 - `compare_models.py` — races Random Forest vs gradient boosting vs a persistence baseline on the same test split, and rewrites `model_comparison.json`
+- `probabilistic.py` — split-conformal max-temperature intervals (`python probabilistic.py` rewrites `probabilistic_metrics.json`); `tests/test_probabilistic.py` — 11 tests for the interval math and the no-leakage split
 
 ## Roadmap
 
@@ -73,6 +100,8 @@ streamlit run app.py
 - [x] Compare Random Forest against gradient boosting and a persistence baseline (Oct 2026 — Random Forest stays, by a small margin; see comparison table above)
 - [ ] Try a simple LSTM for comparison
 - [x] Weekly forecast view, not just tomorrow (Oct 2026 — recursive multi-step outlook; the verified accuracy figures apply to tomorrow only, see "The 7-day outlook" above)
+- [x] Measured max-temperature prediction intervals (Nov 2026 — split-conformal 80%/90% bands, calibrated on 2024, validated on 2025; see "How sure is it?" above)
+- [ ] Calibrated rain probabilities (next: recalibrate on the calibration slice, report Brier score before vs after on the held-out slice)
 - [ ] Sindhi/Urdu language toggle for local users
 
 ---

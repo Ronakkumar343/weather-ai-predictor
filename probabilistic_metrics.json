@@ -1,0 +1,30 @@
+{
+  "method": "split-conformal, symmetric intervals from absolute residuals",
+  "model": "RandomForestRegressor (n_estimators=300, random_state=42), same 17 features and 2024-01-01 split as metrics.json",
+  "train_rows": 3280,
+  "test_rows": 731,
+  "calibration_rows": 365,
+  "validation_rows": 366,
+  "calibration_dates": [
+    "2024-01-01",
+    "2024-12-30"
+  ],
+  "validation_dates": [
+    "2024-12-31",
+    "2025-12-31"
+  ],
+  "bands": {
+    "80pct": {
+      "target_coverage": 0.8,
+      "half_width_c": 1.69,
+      "validation_coverage": 0.858,
+      "validation_mean_width_c": 3.38
+    },
+    "90pct": {
+      "target_coverage": 0.9,
+      "half_width_c": 2.42,
+      "validation_coverage": 0.934,
+      "validation_mean_width_c": 4.83
+    }
+  }
+}
