@@ -70,8 +70,32 @@ than they need to be, which is the safe direction for a forecast.
 The point-forecast accuracy is unchanged by this step (still 1.01 °C
 mean error); intervals only describe its uncertainty. Limits: the
 validation slice is a single year (366 days), the intervals cover
-tomorrow only — no interval is claimed for days 2–7 of the outlook —
-and rain probabilities are not yet calibrated (that is the next step).
+tomorrow only — no interval is claimed for days 2–7 of the outlook.
+
+Rain probabilities were put through the same split (Nov 2026,
+`probabilistic.py`, full numbers in `probabilistic_metrics.json`):
+the Random Forest rain probability was recalibrated on the 365-day
+calibration slice only — isotonic mapping first, Platt logistic
+scaling second — and scored on the held-out 366 days (31 rainy days).
+The honest result is **no gain**: neither method beat the raw
+probability on validation, so the app keeps the raw probability.
+
+| Rain probability | Validation Brier score (lower is better) |
+|---|---|
+| Raw Random Forest | **0.0481** |
+| Isotonic recalibration | 0.0504 |
+| Platt recalibration | 0.0517 |
+
+Why it failed is visible in the calibration curves (also in
+`probabilistic_metrics.json`): with only 34 rainy days in the
+calibration slice, the isotonic map collapses to coarse steps
+(including a 0.99 step for the highest forecasts), so it chases
+calibration noise instead of a real miscalibration — and the raw
+curve was already close to the diagonal where most forecasts live
+(269 of 366 validation days fall in the 0.0–0.1 bin, mean forecast
+0.018 vs 0.011 observed). Recalibration is therefore **not**
+adopted; claiming a "calibrated" rain chance on these numbers
+would be dressing up a worse forecast.
 
 ### The 7-day outlook (Oct 2026)
 
@@ -92,7 +116,7 @@ streamlit run app.py
 - `model.py` — feature engineering + training (shared by the app and the trainer)
 - `train_model.py` — re-downloads the data, retrains, and rewrites `metrics.json`
 - `compare_models.py` — races Random Forest vs gradient boosting vs a persistence baseline on the same test split, and rewrites `model_comparison.json`
-- `probabilistic.py` — split-conformal max-temperature intervals (`python probabilistic.py` rewrites `probabilistic_metrics.json`); `tests/test_probabilistic.py` — 11 tests for the interval math and the no-leakage split
+- `probabilistic.py` — split-conformal max-temperature intervals and rain-probability calibration (`python probabilistic.py` rewrites `probabilistic_metrics.json`); `tests/test_probabilistic.py` — 11 tests for the interval math and the no-leakage split; `tests/test_rain_calibration.py` — 10 tests for Brier scoring, monotonic calibration maps, unfitted-calibrator errors, and the real-pipeline no-gain result (21 tests total)
 
 ## Roadmap
 
@@ -101,7 +125,7 @@ streamlit run app.py
 - [ ] Try a simple LSTM for comparison
 - [x] Weekly forecast view, not just tomorrow (Oct 2026 — recursive multi-step outlook; the verified accuracy figures apply to tomorrow only, see "The 7-day outlook" above)
 - [x] Measured max-temperature prediction intervals (Nov 2026 — split-conformal 80%/90% bands, calibrated on 2024, validated on 2025; see "How sure is it?" above)
-- [ ] Calibrated rain probabilities (next: recalibrate on the calibration slice, report Brier score before vs after on the held-out slice)
+- [x] Calibrated rain probabilities (Nov 2026 — tried isotonic + Platt on the calibration slice; neither improved the Brier score on the held-out slice, so the raw probability is kept and the no-gain result is reported above, not hidden)
 - [ ] Sindhi/Urdu language toggle for local users
 
 ---

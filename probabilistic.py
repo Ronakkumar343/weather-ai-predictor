@@ -22,10 +22,20 @@ So a reported "80% band" means: on the validation slice, about 80%
 of real maxima landed inside the band — measured, not assumed.
 Point-forecast accuracy (MAE 1.01 °C) is unchanged by this step;
 intervals only describe its uncertainty.
+
+Rain probabilities get the same treatment, with a different honest
+outcome possible: the Random Forest rain probability is recalibrated
+on the calibration slice only (isotonic mapping, and Platt scaling
+as a second method), then scored on the held-out validation slice.
+If neither method lowers the Brier score there, the result is
+reported as no-gain and the raw probability is kept — calibration
+is not adopted on the strength of the calibration slice alone.
 """
 import json
 
 import numpy as np
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 
 import model
 
@@ -136,9 +146,165 @@ def evaluate_intervals(df_feat, split_date="2024-01-01", levels=LEVELS):
     }
 
 
+def _validate_probs_actual(probs, actual):
+    """Shared checks for calibration helpers: matching, non-empty,
+    probabilities in [0, 1], labels 0/1."""
+    probs = np.asarray(probs, dtype=float)
+    actual = np.asarray(actual, dtype=float)
+    if probs.size == 0 or actual.size == 0:
+        raise ValueError("calibration needs at least one sample")
+    if probs.shape != actual.shape:
+        raise ValueError("probabilities and labels must have the same length")
+    if np.any(probs < 0) or np.any(probs > 1):
+        raise ValueError("probabilities must lie in [0, 1]")
+    if not np.all((actual == 0) | (actual == 1)):
+        raise ValueError("labels must be 0 or 1")
+    return probs, actual
+
+
+def brier_score(actual, probs):
+    """Mean squared error between forecast probabilities and 0/1
+    outcomes. 0 is perfect; a constant 0.5 forecast scores 0.25
+    regardless of the outcomes."""
+    probs, actual = _validate_probs_actual(probs, actual)
+    return float(np.mean((probs - actual) ** 2))
+
+
+def fit_isotonic_calibrator(cal_probs, cal_actual):
+    """Isotonic (monotone, piecewise-constant) recalibration map.
+
+    Fitted on the calibration slice only. The fitted map is
+    non-decreasing by construction: a higher raw probability can
+    never map to a lower calibrated probability. With only ~34 rainy
+    calibration days this map is coarse — that is exactly what the
+    validation Brier score then exposes.
+    """
+    probs, actual = _validate_probs_actual(cal_probs, cal_actual)
+    calibrator = IsotonicRegression(out_of_bounds="clip")
+    calibrator.fit(probs, actual)
+    return calibrator
+
+
+def fit_platt_calibrator(cal_probs, cal_actual):
+    """Platt scaling: a logistic regression on the raw probability.
+
+    The canonical alternative to isotonic calibration, also fitted
+    on the calibration slice only. One smooth sigmoid instead of
+    isotonic's steps, so it cannot chase single calibration days.
+    """
+    probs, actual = _validate_probs_actual(cal_probs, cal_actual)
+    calibrator = LogisticRegression(max_iter=1000)
+    calibrator.fit(probs.reshape(-1, 1), actual)
+    return calibrator
+
+
+def apply_calibrator(calibrator, probs):
+    """Apply a fitted isotonic or Platt calibrator, clipped to [0, 1].
+
+    An unfitted calibrator raises sklearn's NotFittedError here —
+    checked explicitly, because IsotonicRegression.predict on its
+    own raises a bare AttributeError when unfitted. Callers must
+    fit on calibration data first, never on the slice being scored.
+    """
+    from sklearn.utils.validation import check_is_fitted
+    check_is_fitted(calibrator)
+    probs = np.asarray(probs, dtype=float)
+    if probs.size == 0:
+        raise ValueError("apply_calibrator needs at least one probability")
+    if np.any(probs < 0) or np.any(probs > 1):
+        raise ValueError("probabilities must lie in [0, 1]")
+    if isinstance(calibrator, IsotonicRegression):
+        calibrated = calibrator.predict(probs)
+    elif isinstance(calibrator, LogisticRegression):
+        calibrated = calibrator.predict_proba(probs.reshape(-1, 1))[:, 1]
+    else:
+        raise TypeError("calibrator must be isotonic or Platt (logistic)")
+    return np.clip(calibrated, 0.0, 1.0)
+
+
+def calibration_curve(actual, probs, n_bins=10):
+    """Binned calibration curve: per 0.1-wide probability bin, the
+    count, the mean forecast probability and the observed rain rate.
+
+    Empty bins are kept (count 0, rates 0.0) so the curve always has
+    n_bins entries and a reader can see where the model never
+    forecasts. Bins are [lo, hi) except the last, which is [0.9, 1.0].
+    """
+    probs, actual = _validate_probs_actual(probs, actual)
+    if n_bins < 1:
+        raise ValueError("n_bins must be at least 1")
+    curve = []
+    for b in range(n_bins):
+        lo, hi = b / n_bins, (b + 1) / n_bins
+        if b == n_bins - 1:
+            mask = (probs >= lo) & (probs <= hi)
+        else:
+            mask = (probs >= lo) & (probs < hi)
+        count = int(mask.sum())
+        curve.append({
+            "bin": [round(lo, 2), round(hi, 2)],
+            "count": count,
+            "mean_predicted": round(float(probs[mask].mean()), 3) if count else 0.0,
+            "observed_rate": round(float(actual[mask].mean()), 3) if count else 0.0,
+        })
+    return curve
+
+
+def evaluate_rain_calibration(df_feat, split_date="2024-01-01"):
+    """Recalibrate rain probabilities on calibration, score on validation.
+
+    Same Random Forest, same 2024-01-01 split and same chronological
+    calibration/validation slices as evaluate_intervals: the
+    calibrators see calibration days only, and every Brier score and
+    curve below is measured on the held-out validation slice. The
+    `improved_*` flags are computed, not assumed: a method counts as
+    an improvement only if its validation Brier score is strictly
+    below the raw model's.
+    """
+    train = df_feat[df_feat["date"] < split_date]
+    test = df_feat[df_feat["date"] >= split_date].reset_index(drop=True)
+    _, clf, _ = model.train(df_feat, split_date=split_date)
+    rain_col = list(clf.classes_).index(1)
+    probs = clf.predict_proba(test[model.FEATURES])[:, rain_col]
+    actual = test["target_rain"].to_numpy(dtype=float)
+    cal_idx, val_idx = split_calibration_validation(len(test))
+    isotonic = fit_isotonic_calibrator(probs[cal_idx], actual[cal_idx])
+    platt = fit_platt_calibrator(probs[cal_idx], actual[cal_idx])
+    iso_val = apply_calibrator(isotonic, probs[val_idx])
+    platt_val = apply_calibrator(platt, probs[val_idx])
+    raw_brier = brier_score(actual[val_idx], probs[val_idx])
+    iso_brier = brier_score(actual[val_idx], iso_val)
+    platt_brier = brier_score(actual[val_idx], platt_val)
+    return {
+        "method": "isotonic (primary) and Platt logistic scaling, "
+                  "both fitted on the calibration slice only",
+        "model": "RandomForestClassifier (n_estimators=300, random_state=42), "
+                 "same 17 features and 2024-01-01 split as metrics.json",
+        "train_rows": int(len(train)),
+        "test_rows": int(len(test)),
+        "calibration_rows": int(len(cal_idx)),
+        "validation_rows": int(len(val_idx)),
+        "calibration_dates": [str(test["date"].iloc[cal_idx[0]].date()),
+                              str(test["date"].iloc[cal_idx[-1]].date())],
+        "validation_dates": [str(test["date"].iloc[val_idx[0]].date()),
+                             str(test["date"].iloc[val_idx[-1]].date())],
+        "calibration_rain_days": int(actual[cal_idx].sum()),
+        "validation_rain_days": int(actual[val_idx].sum()),
+        "raw_brier": round(raw_brier, 4),
+        "isotonic_brier": round(iso_brier, 4),
+        "platt_brier": round(platt_brier, 4),
+        "improved_isotonic": bool(iso_brier < raw_brier),
+        "improved_platt": bool(platt_brier < raw_brier),
+        "calibration_curve_raw": calibration_curve(actual[val_idx], probs[val_idx]),
+        "calibration_curve_isotonic": calibration_curve(actual[val_idx], iso_val),
+        "calibration_curve_platt": calibration_curve(actual[val_idx], platt_val),
+    }
+
+
 def main(data_dir="data"):
     df_feat = model.build_features(model.load_history(data_dir))
     results = evaluate_intervals(df_feat)
+    results["rain_calibration"] = evaluate_rain_calibration(df_feat)
     with open("probabilistic_metrics.json", "w") as f:
         json.dump(results, f, indent=2)
     print("Split-conformal max-temperature intervals "
@@ -150,6 +316,16 @@ def main(data_dir="data"):
         print(f"  {name} band: +/-{band['half_width_c']} °C, "
               f"validation coverage {band['validation_coverage']:.1%}, "
               f"mean width {band['validation_mean_width_c']} °C")
+    rain = results["rain_calibration"]
+    print("Rain-probability calibration "
+          f"(calibration {rain['calibration_rows']} days, "
+          f"validation {rain['validation_rows']} days, "
+          f"{rain['validation_rain_days']} rainy validation days):")
+    print(f"  raw Brier {rain['raw_brier']}, "
+          f"isotonic Brier {rain['isotonic_brier']} "
+          f"(improved: {rain['improved_isotonic']}), "
+          f"Platt Brier {rain['platt_brier']} "
+          f"(improved: {rain['improved_platt']})")
 
 
 if __name__ == "__main__":

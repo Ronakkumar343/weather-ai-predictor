@@ -26,5 +26,304 @@
       "validation_coverage": 0.934,
       "validation_mean_width_c": 4.83
     }
+  },
+  "rain_calibration": {
+    "method": "isotonic (primary) and Platt logistic scaling, both fitted on the calibration slice only",
+    "model": "RandomForestClassifier (n_estimators=300, random_state=42), same 17 features and 2024-01-01 split as metrics.json",
+    "train_rows": 3280,
+    "test_rows": 731,
+    "calibration_rows": 365,
+    "validation_rows": 366,
+    "calibration_dates": [
+      "2024-01-01",
+      "2024-12-30"
+    ],
+    "validation_dates": [
+      "2024-12-31",
+      "2025-12-31"
+    ],
+    "calibration_rain_days": 34,
+    "validation_rain_days": 31,
+    "raw_brier": 0.0481,
+    "isotonic_brier": 0.0504,
+    "platt_brier": 0.0517,
+    "improved_isotonic": false,
+    "improved_platt": false,
+    "calibration_curve_raw": [
+      {
+        "bin": [
+          0.0,
+          0.1
+        ],
+        "count": 269,
+        "mean_predicted": 0.018,
+        "observed_rate": 0.011
+      },
+      {
+        "bin": [
+          0.1,
+          0.2
+        ],
+        "count": 44,
+        "mean_predicted": 0.147,
+        "observed_rate": 0.114
+      },
+      {
+        "bin": [
+          0.2,
+          0.3
+        ],
+        "count": 15,
+        "mean_predicted": 0.244,
+        "observed_rate": 0.133
+      },
+      {
+        "bin": [
+          0.3,
+          0.4
+        ],
+        "count": 4,
+        "mean_predicted": 0.353,
+        "observed_rate": 0.5
+      },
+      {
+        "bin": [
+          0.4,
+          0.5
+        ],
+        "count": 13,
+        "mean_predicted": 0.456,
+        "observed_rate": 0.308
+      },
+      {
+        "bin": [
+          0.5,
+          0.6
+        ],
+        "count": 7,
+        "mean_predicted": 0.55,
+        "observed_rate": 0.714
+      },
+      {
+        "bin": [
+          0.6,
+          0.7
+        ],
+        "count": 5,
+        "mean_predicted": 0.641,
+        "observed_rate": 0.6
+      },
+      {
+        "bin": [
+          0.7,
+          0.8
+        ],
+        "count": 7,
+        "mean_predicted": 0.738,
+        "observed_rate": 0.714
+      },
+      {
+        "bin": [
+          0.8,
+          0.9
+        ],
+        "count": 2,
+        "mean_predicted": 0.88,
+        "observed_rate": 1.0
+      },
+      {
+        "bin": [
+          0.9,
+          1.0
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      }
+    ],
+    "calibration_curve_isotonic": [
+      {
+        "bin": [
+          0.0,
+          0.1
+        ],
+        "count": 320,
+        "mean_predicted": 0.02,
+        "observed_rate": 0.025
+      },
+      {
+        "bin": [
+          0.1,
+          0.2
+        ],
+        "count": 10,
+        "mean_predicted": 0.136,
+        "observed_rate": 0.4
+      },
+      {
+        "bin": [
+          0.2,
+          0.3
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      },
+      {
+        "bin": [
+          0.3,
+          0.4
+        ],
+        "count": 6,
+        "mean_predicted": 0.333,
+        "observed_rate": 0.167
+      },
+      {
+        "bin": [
+          0.4,
+          0.5
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      },
+      {
+        "bin": [
+          0.5,
+          0.6
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      },
+      {
+        "bin": [
+          0.6,
+          0.7
+        ],
+        "count": 24,
+        "mean_predicted": 0.663,
+        "observed_rate": 0.5
+      },
+      {
+        "bin": [
+          0.7,
+          0.8
+        ],
+        "count": 2,
+        "mean_predicted": 0.733,
+        "observed_rate": 1.0
+      },
+      {
+        "bin": [
+          0.8,
+          0.9
+        ],
+        "count": 2,
+        "mean_predicted": 0.8,
+        "observed_rate": 1.0
+      },
+      {
+        "bin": [
+          0.9,
+          1.0
+        ],
+        "count": 2,
+        "mean_predicted": 0.99,
+        "observed_rate": 1.0
+      }
+    ],
+    "calibration_curve_platt": [
+      {
+        "bin": [
+          0.0,
+          0.1
+        ],
+        "count": 313,
+        "mean_predicted": 0.051,
+        "observed_rate": 0.026
+      },
+      {
+        "bin": [
+          0.1,
+          0.2
+        ],
+        "count": 18,
+        "mean_predicted": 0.13,
+        "observed_rate": 0.222
+      },
+      {
+        "bin": [
+          0.2,
+          0.3
+        ],
+        "count": 11,
+        "mean_predicted": 0.252,
+        "observed_rate": 0.273
+      },
+      {
+        "bin": [
+          0.3,
+          0.4
+        ],
+        "count": 10,
+        "mean_predicted": 0.343,
+        "observed_rate": 0.6
+      },
+      {
+        "bin": [
+          0.4,
+          0.5
+        ],
+        "count": 4,
+        "mean_predicted": 0.447,
+        "observed_rate": 0.5
+      },
+      {
+        "bin": [
+          0.5,
+          0.6
+        ],
+        "count": 6,
+        "mean_predicted": 0.545,
+        "observed_rate": 0.667
+      },
+      {
+        "bin": [
+          0.6,
+          0.7
+        ],
+        "count": 2,
+        "mean_predicted": 0.621,
+        "observed_rate": 1.0
+      },
+      {
+        "bin": [
+          0.7,
+          0.8
+        ],
+        "count": 2,
+        "mean_predicted": 0.721,
+        "observed_rate": 1.0
+      },
+      {
+        "bin": [
+          0.8,
+          0.9
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      },
+      {
+        "bin": [
+          0.9,
+          1.0
+        ],
+        "count": 0,
+        "mean_predicted": 0.0,
+        "observed_rate": 0.0
+      }
+    ]
   }
 }
