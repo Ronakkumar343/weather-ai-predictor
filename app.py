@@ -19,6 +19,7 @@ import model
 LAT, LON = 24.7433, 69.8066
 DATA_DIR = Path(__file__).parent / "data"
 METRICS = Path(__file__).parent / "metrics.json"
+PROB_METRICS = Path(__file__).parent / "probabilistic_metrics.json"
 
 st.set_page_config(page_title="Thar Weather AI — Mithi", page_icon="🌦️")
 st.title("🌦️ Thar Weather AI")
@@ -36,6 +37,47 @@ def load_models():
     feat = model.build_features(load_history())
     reg, clf = model.train_final(feat)
     return reg, clf
+
+
+def load_probabilistic_metrics():
+    """Measured interval/calibration numbers, or None if the file is
+    absent — the app then falls back to the point forecast alone and
+    claims no range, rather than inventing one."""
+    if PROB_METRICS.exists():
+        return json.loads(PROB_METRICS.read_text())
+    return None
+
+
+def tomorrow_range(tmax, half_width):
+    """Symmetric 80% band around a point forecast: (low, high)."""
+    return (tmax - half_width, tmax + half_width)
+
+
+def range_explanation(band):
+    """One plain-language sentence for an 80% band, using only its
+    measured validation coverage — never the 80% target dressed up
+    as a measured result."""
+    return (
+        "That range is the measured 80% band: on the 366 held-out "
+        f"validation days, the real maximum landed inside a band this "
+        f"wide on {band['validation_coverage']:.1%} of days — think of "
+        "it as about 8 in 10 similar days landing inside the range."
+    )
+
+
+def rain_chance_note(prob_metrics):
+    """Why the rain chance shown is the RAW Random Forest probability:
+    recalibration was tried and did not improve it on held-out days,
+    so no 'calibrated' claim is made."""
+    rain = prob_metrics["rain_calibration"]
+    return (
+        "This is the raw Random Forest chance, not a calibrated one: "
+        "recalibration was tried (isotonic and Platt scaling, fitted on "
+        "the calibration slice only) and did not improve it on the "
+        "held-out validation days — Brier score raw "
+        f"{rain['raw_brier']}, isotonic {rain['isotonic_brier']}, "
+        f"Platt {rain['platt_brier']} (lower is better)."
+    )
 
 
 def feature_row_for_tomorrow(recent: pd.DataFrame) -> pd.DataFrame:
@@ -158,9 +200,20 @@ with tab1:
         tmax = float(reg.predict(row[model.FEATURES])[0])
         rain_p = float(clf.predict_proba(row[model.FEATURES])[0][1])
         target = (recent["date"].iloc[-1] + pd.Timedelta(days=1)).strftime("%A, %d %B %Y")
+        prob = load_probabilistic_metrics()
         c1, c2 = st.columns(2)
-        c1.metric(f"Predicted max temperature — {target}", f"{tmax:.1f} °C")
+        if prob is not None and "80pct" in prob.get("bands", {}):
+            low, high = tomorrow_range(
+                tmax, prob["bands"]["80pct"]["half_width_c"])
+            c1.metric(f"Predicted max temperature range — {target}",
+                      f"{low:.1f}–{high:.1f} °C")
+            st.write(f"Best single guess: **{tmax:.1f} °C**. "
+                     f"{range_explanation(prob['bands']['80pct'])}")
+        else:
+            c1.metric(f"Predicted max temperature — {target}", f"{tmax:.1f} °C")
         c2.metric("Chance of rain (≥ 1 mm)", f"{rain_p:.0%}")
+        if prob is not None and "rain_calibration" in prob:
+            st.caption(rain_chance_note(prob))
         st.write("Based on the last 14 days of observed weather in Mithi.")
 
         rainy_hist = hist.loc[hist["precipitation_sum"] >= model.RAIN_MM,

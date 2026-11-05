@@ -112,7 +112,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-- `app.py` — the Streamlit app (live prediction + recursive 7-day outlook use the Open-Meteo forecast API for the last 14 observed days; the climate tab works fully offline)
+- `app.py` — the Streamlit app (live prediction + recursive 7-day outlook use the Open-Meteo forecast API for the last 14 observed days; the climate tab works fully offline). Tomorrow's card shows the measured 80% temperature range and the raw rain chance, with the plain-language explanation of what the range means; no interval is shown for days 2–7
 - `model.py` — feature engineering + training (shared by the app and the trainer)
 - `train_model.py` — re-downloads the data, retrains, and rewrites `metrics.json`
 - `compare_models.py` — races Random Forest vs gradient boosting vs a persistence baseline on the same test split, and rewrites `model_comparison.json`
@@ -126,6 +126,7 @@ streamlit run app.py
 - [x] Weekly forecast view, not just tomorrow (Oct 2026 — recursive multi-step outlook; the verified accuracy figures apply to tomorrow only, see "The 7-day outlook" above)
 - [x] Measured max-temperature prediction intervals (Nov 2026 — split-conformal 80%/90% bands, calibrated on 2024, validated on 2025; see "How sure is it?" above)
 - [x] Calibrated rain probabilities (Nov 2026 — tried isotonic + Platt on the calibration slice; neither improved the Brier score on the held-out slice, so the raw probability is kept and the no-gain result is reported above, not hidden)
+- [x] Streamlit display of the range + raw rain chance (Nov 2026 — tomorrow's card shows the measured 80% temperature range with its plain-language explanation and the raw rain chance with the no-gain recalibration note; no interval for days 2–7)
 - [ ] Sindhi/Urdu language toggle for local users
 
 ---
